@@ -69,22 +69,23 @@ query = st.text_input("Enter your query")
 #     return docs
 
 import os
+from langchain.document_loaders import PyPDFLoader
 
 def load_data(uploaded_file):
     # Ensure the directory exists
     save_dir = "./data"
     os.makedirs(save_dir, exist_ok=True)
 
-    # Define the save path
+    # Save uploaded file
     save_path = os.path.join(save_dir, uploaded_file.name)
-
-    # Save the file
     with open(save_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
 
-    # Now load using PyPDFLoader or similar
+    # Load using PyPDFLoader
     loader = PyPDFLoader(save_path)
-    return loader.load()
+    docs = loader.load()
+    return docs
+
 
 
 # splitting text
@@ -161,4 +162,5 @@ if st.button("Get Answer"):
         st.write("Answer:", result)
     else:
         st.write("Please upload a file and enter a query.")
+
 
