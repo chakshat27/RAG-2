@@ -12,6 +12,8 @@ from langchain.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
+from InstructorEmbedding import INSTRUCTOR
+
 
 # 🤗 Hugging Face imports
 from langchain_community.embeddings import HuggingFaceInstructEmbeddings
@@ -112,3 +114,4 @@ if st.button("Get Answer"):
         # 4) Display
         st.markdown("### 💬 Answer")
         st.write(answer)
+
