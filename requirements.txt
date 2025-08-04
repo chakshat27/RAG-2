@@ -1,0 +1,10 @@
+streamlit
+PyPDF2
+langchain 
+faiss-cpu
+transformers
+google-generativeai
+python-dotenv
+requests
+huggingface-hub
+torch
