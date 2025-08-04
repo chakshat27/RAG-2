@@ -1,45 +1,49 @@
-from PyPDF2 import PdfReader
-from langchain_community.embeddings import HuggingFaceInstructEmbeddings
-from langchain.vectorstores.faiss import FAISS
-from dotenv import load_dotenv
-from langchain.chains import RetrievalQA
-from langchain.document_loaders import PyPDFDirectoryLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.memory import ConversationBufferMemory
-from langchain.chains.question_answering import load_qa_chain
-from langchain.prompts import PromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+# app.py
 import os
-import requests
-from huggingface_hub import configure_http_backend
-import streamlit as st
-from pathlib import Path
 import shutil
+from pathlib import Path
 
-# fixing the SSL issue
-def backend_factory() -> requests.Session:
-    session = requests.Session()
-    session.verify = False
-    return session
+import streamlit as st
+from PyPDF2 import PdfReader
 
-configure_http_backend(backend_factory=backend_factory)
+from langchain.document_loaders import PyPDFLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.vectorstores import FAISS
+from langchain.chains import RetrievalQA
+from langchain.prompts import PromptTemplate
+from langchain.memory import ConversationBufferMemory
 
-# set GEMINI key
-os.environ["GOOGLE_API_KEY"] = " "
+# 🤗 Hugging Face imports
+from langchain_community.embeddings import HuggingFaceInstructEmbeddings
+from langchain import HuggingFaceHub
 
-# embeddings and model
-embeddings_model = GoogleGenerativeAIEmbeddings(
-    model="models/embedding-001",
-    google_api_key=os.environ["GOOGLE_API_KEY"]
+# ─── Configuration ─────────────────────────────────────────────────────────────
+
+st.set_page_config(page_title="PDF Q&A – HuggingFace", layout="wide")
+st.title("📄 PDF Q&A with Hugging Face")
+
+# 1) Your Hugging Face token (get one free at https://huggingface.co/settings/tokens)
+HF_TOKEN = st.secrets.get("HF_TOKEN") or os.getenv("HF_TOKEN")
+if not HF_TOKEN:
+    st.error("❗️ Please set your `HF_TOKEN` in Streamlit Secrets or .env")
+    st.stop()
+
+# 2) Embedding model (Instructor XL is free on HF)
+embeddings_model = HuggingFaceInstructEmbeddings(
+    model_name="hkunlp/instructor-xl",
+    model_kwargs={"device": "cpu"},
 )
 
-model = ChatGoogleGenerativeAI(model="gemini-1.5-pro")
+# 3) Text-generation model (Flan-T5-XL via HuggingFaceHub)
+llm = HuggingFaceHub(
+    repo_id="google/flan-t5-xl",
+    model_kwargs={"temperature": 0, "max_length": 512},
+    huggingfacehub_api_token=HF_TOKEN,
+)
 
-# prompt
-prompt_temp = PromptTemplate.from_template(
-    """
-    You are an intelligent assistant designed to answer questions based on the content of uploaded PDF documents.
-    Please provide accurate and helpful answers to the questions asked, using the context provided from the documents.
+# 4) Prompt template
+prompt = PromptTemplate.from_template(
+    """You are a helpful assistant. Use the following context to answer the question as accurately as possible.
 
     Context:
     {context}
@@ -47,120 +51,64 @@ prompt_temp = PromptTemplate.from_template(
     Question:
     {question}
 
-    Helpful Answer:
-    """
+    Answer:"""
 )
 
-prompt_str = prompt_temp.template
-prompt = PromptTemplate(template=prompt_str, input_variables=["history", "context", "question"])
+# ─── Helpers ────────────────────────────────────────────────────────────────────
 
-# STREAMLIT UI
-st.title("File Upload and Query")
-uploaded_file = st.file_uploader("Choose a file", type=["pdf"])
-query = st.text_input("Enter your query")
-
-# loading data
-# def load_data(uploaded_file):
-#     save_path = os.path.join("./data/", uploaded_file.name)
-#     with open(save_path, "wb") as f:
-#         f.write(uploaded_file.getbuffer())
-#     loader = PyPDFDirectoryLoader("./data/")
-#     docs = loader.load()
-#     return docs
-
-import os
-from langchain.document_loaders import PyPDFLoader
-
-def load_data(uploaded_file):
-    # Ensure the directory exists
-    save_dir = "./data"
-    os.makedirs(save_dir, exist_ok=True)
-
-    # Save uploaded file
-    save_path = os.path.join(save_dir, uploaded_file.name)
-    with open(save_path, "wb") as f:
+def save_pdf(uploaded_file):
+    save_dir = Path("data")
+    save_dir.mkdir(exist_ok=True)
+    path = save_dir / uploaded_file.name
+    with open(path, "wb") as f:
         f.write(uploaded_file.getbuffer())
+    return path
 
-    # Load using PyPDFLoader
-    loader = PyPDFLoader(save_path)
+def load_and_split(path: Path):
+    loader = PyPDFLoader(str(path))
     docs = loader.load()
-    return docs
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    return splitter.split_documents(docs)
 
+def build_faiss_index(docs):
+    db_path = Path("vectorstore/faiss_index")
+    if db_path.exists():
+        shutil.rmtree(db_path)
+    vectordb = FAISS.from_documents(docs, embeddings_model)
+    vectordb.save_local(str(db_path))
+    return vectordb
 
-
-# splitting text
-def split_text(docs):
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=64)
-    return text_splitter.split_documents(docs)
-
-# storing in vector DB
-def store_VDB(texts):
-    global qa_chain  
-    global memory    
-
-    # Delete old vectorstore
-    db_path = Path("./vectorstores/db_faiss")
-    if db_path.exists() and db_path.is_dir():
-        shutil.rmtree(db_path)  # Removes old vectorstore folder
-
-    vectorstore = FAISS.from_documents(documents=texts, embedding=embeddings_model)
-    vectorstore.save_local(str(db_path))
-
-    # Rebuild memory
-    memory = ConversationBufferMemory(
-        memory_key="history",
-        input_key="question"
-    )
-
-    # Load new DB
-    db = FAISS.load_local(str(db_path), embeddings_model, allow_dangerous_deserialization=True)
-
-    # QA Chain
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=model,
-        chain_type="stuff",
-        retriever=db.as_retriever(search_kwargs={'k': 2}),
-        return_source_documents=True,
-        chain_type_kwargs={
-            "verbose": True,
-            "prompt": prompt,
-            "memory": memory,
-        },
-    )
-
-    return db
-
-# defining QA chain
-def create_chain(vectorstore):
+def make_qa_chain(vectordb):
+    retriever = vectordb.as_retriever(search_kwargs={"k": 3})
+    memory = ConversationBufferMemory(memory_key="history", input_key="question")
     return RetrievalQA.from_chain_type(
-        llm=model,
+        llm=llm,
         chain_type="stuff",
-        retriever=vectorstore.as_retriever(search_kwargs={"k": 2}),
-        return_source_documents=True,
-        chain_type_kwargs={
-            "verbose": True,
-            "prompt": prompt,
-            "memory": ConversationBufferMemory(memory_key="history", input_key="question"),
-        },
+        retriever=retriever,
+        return_source_documents=False,
+        chain_type_kwargs={"prompt": prompt, "memory": memory},
     )
 
-# answering query
-def query_qa_chain(qa_chain, query):
-    response = qa_chain({"query": query})
-    return response['result']
+# ─── Streamlit App ────────────────────────────────────────────────────────────
 
-# main logic
+uploaded_file = st.file_uploader("Upload a PDF", type="pdf")
+query = st.text_input("Enter your question about the document")
+
 if st.button("Get Answer"):
-    if uploaded_file is not None and query:
-        docs = load_data(uploaded_file)
-        texts = split_text(docs)
-
-        db_path = Path("./vectorstores/db_faiss")
-        db = store_VDB(texts)
-        qa_chain = create_chain(db)
-        result = query_qa_chain(qa_chain, query)
-        st.write("Answer:", result)
+    if not uploaded_file or not query:
+        st.warning("📌 Please upload a PDF and enter a query.")
     else:
-        st.write("Please upload a file and enter a query.")
+        # 1) Save and split
+        pdf_path = save_pdf(uploaded_file)
+        docs = load_and_split(pdf_path)
 
+        # 2) Build / load FAISS index
+        vectordb = build_faiss_index(docs)
 
+        # 3) Create QA chain and run
+        qa = make_qa_chain(vectordb)
+        answer = qa.run(query)
+
+        # 4) Display
+        st.markdown("### 💬 Answer")
+        st.write(answer)
