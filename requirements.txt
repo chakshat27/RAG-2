@@ -13,6 +13,8 @@ langchain-google-genai
 pypdf
 tiktoken
 InstructorEmbedding
+sentence-transformers
+
 
 
 
