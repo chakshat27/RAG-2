@@ -6,9 +6,9 @@ from pathlib import Path
 import streamlit as st
 from PyPDF2 import PdfReader
 
-from langchain.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
@@ -18,8 +18,7 @@ from huggingface_hub import login
 
 # 🤗 Hugging Face imports
 from langchain_community.embeddings import HuggingFaceInstructEmbeddings
-from langchain import HuggingFaceHub
-
+from langchain_community.llms import HuggingFaceHub
 # ─── Streamlit Setup ───────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="PDF Q&A – HuggingFace", layout="wide")
@@ -33,7 +32,7 @@ if not HF_TOKEN:
     st.stop()
 
 # Login to Hugging Face Hub
-login(token=HF_TOKEN)
+#login(token=HF_TOKEN)
 
 # ─── Models ─────────────────────────────────────────────────────────────────────
 
@@ -117,3 +116,4 @@ if st.button("Get Answer"):
             st.write(answer)
         except Exception as e:
             st.error(f"⚠️ Error: {e}")
+
