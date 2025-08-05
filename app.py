@@ -13,12 +13,9 @@ from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
 
-# Hugging Face login
-from huggingface_hub import login
-
-# 🤗 Hugging Face imports
 from langchain_community.embeddings import HuggingFaceInstructEmbeddings
 from langchain_community.llms import HuggingFaceHub
+
 # ─── Streamlit Setup ───────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="PDF Q&A – HuggingFace", layout="wide")
@@ -30,9 +27,6 @@ HF_TOKEN = st.secrets.get("HF_TOKEN")
 if not HF_TOKEN:
     st.error("❗️ Please set your `HF_TOKEN` in Streamlit Secrets.")
     st.stop()
-
-# Login to Hugging Face Hub
-#login(token=HF_TOKEN)
 
 # ─── Models ─────────────────────────────────────────────────────────────────────
 
@@ -100,6 +94,9 @@ def make_qa_chain(vectordb):
 # ─── Streamlit App ──────────────────────────────────────────────────────────────
 
 uploaded_file = st.file_uploader("Upload a PDF", type="pdf")
+if uploaded_file:
+    st.success(f"✅ Uploaded: {uploaded_file.name}")
+
 query = st.text_input("Enter your question about the document")
 
 if st.button("Get Answer"):
@@ -116,4 +113,3 @@ if st.button("Get Answer"):
             st.write(answer)
         except Exception as e:
             st.error(f"⚠️ Error: {e}")
-
