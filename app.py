@@ -4,7 +4,6 @@ import shutil
 from pathlib import Path
 
 import streamlit as st
-from PyPDF2 import PdfReader
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -39,6 +38,7 @@ embeddings_model = HuggingFaceInstructEmbeddings(
 # 2. LLM model (Flan-T5-XL from Hugging Face)
 llm = HuggingFaceHub(
     repo_id="google/flan-t5-xl",
+    task="text2text-generation",  # ✅ FIXED: Required task declaration
     model_kwargs={"temperature": 0, "max_length": 512},
     huggingfacehub_api_token=HF_TOKEN,
 )
