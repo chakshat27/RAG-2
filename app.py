@@ -12,38 +12,45 @@ from langchain.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
-from InstructorEmbedding import INSTRUCTOR
 
+# Hugging Face login
+from huggingface_hub import login
 
 # 🤗 Hugging Face imports
 from langchain_community.embeddings import HuggingFaceInstructEmbeddings
 from langchain import HuggingFaceHub
 
-# ─── Configuration ─────────────────────────────────────────────────────────────
+# ─── Streamlit Setup ───────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="PDF Q&A – HuggingFace", layout="wide")
 st.title("📄 PDF Q&A with Hugging Face")
 
-# 1) Your Hugging Face token (get one free at https://huggingface.co/settings/tokens)
-HF_TOKEN = st.secrets.get("HF_TOKEN") or os.getenv("HF_TOKEN")
+# ─── Token & Authentication ────────────────────────────────────────────────────
+
+HF_TOKEN = st.secrets.get("HF_TOKEN")
 if not HF_TOKEN:
-    st.error("❗️ Please set your `HF_TOKEN` in Streamlit Secrets or .env")
+    st.error("❗️ Please set your `HF_TOKEN` in Streamlit Secrets.")
     st.stop()
 
-# 2) Embedding model (Instructor XL is free on HF)
+# Login to Hugging Face Hub
+login(token=HF_TOKEN)
+
+# ─── Models ─────────────────────────────────────────────────────────────────────
+
+# 1. Embedding model (Instructor XL from Hugging Face)
 embeddings_model = HuggingFaceInstructEmbeddings(
     model_name="hkunlp/instructor-xl",
     model_kwargs={"device": "cpu"},
 )
 
-# 3) Text-generation model (Flan-T5-XL via HuggingFaceHub)
+# 2. LLM model (Flan-T5-XL from Hugging Face)
 llm = HuggingFaceHub(
     repo_id="google/flan-t5-xl",
     model_kwargs={"temperature": 0, "max_length": 512},
     huggingfacehub_api_token=HF_TOKEN,
 )
 
-# 4) Prompt template
+# 3. Prompt template
 prompt = PromptTemplate.from_template(
     """You are a helpful assistant. Use the following context to answer the question as accurately as possible.
 
@@ -91,7 +98,7 @@ def make_qa_chain(vectordb):
         chain_type_kwargs={"prompt": prompt, "memory": memory},
     )
 
-# ─── Streamlit App ────────────────────────────────────────────────────────────
+# ─── Streamlit App ──────────────────────────────────────────────────────────────
 
 uploaded_file = st.file_uploader("Upload a PDF", type="pdf")
 query = st.text_input("Enter your question about the document")
@@ -100,18 +107,13 @@ if st.button("Get Answer"):
     if not uploaded_file or not query:
         st.warning("📌 Please upload a PDF and enter a query.")
     else:
-        # 1) Save and split
-        pdf_path = save_pdf(uploaded_file)
-        docs = load_and_split(pdf_path)
-
-        # 2) Build / load FAISS index
-        vectordb = build_faiss_index(docs)
-
-        # 3) Create QA chain and run
-        qa = make_qa_chain(vectordb)
-        answer = qa.run(query)
-
-        # 4) Display
-        st.markdown("### 💬 Answer")
-        st.write(answer)
-
+        try:
+            pdf_path = save_pdf(uploaded_file)
+            docs = load_and_split(pdf_path)
+            vectordb = build_faiss_index(docs)
+            qa = make_qa_chain(vectordb)
+            answer = qa.run(query)
+            st.markdown("### 💬 Answer")
+            st.write(answer)
+        except Exception as e:
+            st.error(f"⚠️ Error: {e}")
